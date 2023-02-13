@@ -5,124 +5,165 @@ import {
   StyledInput,
 } from "./Calculator.styled";
 import { CalculatorButton } from "./components";
-import {
-  isOperationString,
-  findStackTopString,
-  findIndexStackTopString,
-  operationsMap,
-} from "./helpers";
+import { shouldCalculate, toggleSign } from "./helpers";
+import { operationsMap } from "./constants";
+
+type ActiveStack = "operand" | "operation";
 
 function Calculator() {
-  const [stack, setStack] = useState<string[]>([]);
+  const [operandStack, setOperandStack] = useState<string[]>([]);
+  const [operationStack, setOperationStack] = useState<string[]>([]);
+
+  const [activeStack, setActiveStack] = useState<ActiveStack>("operand");
+
+  const [nextOperation, setNextOperation] = useState("");
+
+  /* This useEffect is just for debugging */
+  // useEffect(() => {
+  //   console.log(
+  //     "nextOperation: %o, activeStack: %o\noperandStack: %o\noperationStack: %o",
+  //     nextOperation,
+  //     activeStack,
+  //     operandStack,
+  //     operationStack
+  //   );
+  // }, [nextOperation, operandStack, operationStack]);
 
   useEffect(() => {
-    console.log(stack);
-  }, [stack]);
+    if (!nextOperation) {
+      return;
+    }
+    const currentOperation = operationStack[operationStack.length - 1];
+    if (!currentOperation || operandStack.length < 2) {
+      return;
+    }
+    if (
+      shouldCalculate(
+        operationsMap[currentOperation].order,
+        operationsMap[nextOperation].order
+      )
+    ) {
+      calculate();
+    }
+  }, [nextOperation]);
 
-  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const value = event?.target?.value;
-    console.log("handleInputChange; value: %o", value);
-  };
-
-  const clearAll = () => setStack([]);
-
-  // TODO: implement (ran out of time)
   const calculate = () => {
-    let value: number;
-    let operation: (a: number, b: number) => number;
-    if (stack.length === 3) {
-      operation = operationsMap[stack[1]];
-      value = operation(parseFloat(stack[0]), parseFloat(stack[2]));
-      setStack([value.toString()]);
-    } else if (stack.length === 4) {
-      operation = operationsMap[stack[1]];
-      value = operation(parseFloat(stack[0]), parseFloat(stack[2]));
-      setStack([value.toString(), stack[3]]);
+    const tempOperandStack = [...operandStack];
+    const tempOperationStack = [...operationStack];
+    while (tempOperandStack.length > 1) {
+      const curOperationStr = tempOperationStack.pop();
+      const arg2 = tempOperandStack.pop();
+      const arg1 = tempOperandStack.pop();
+      if (curOperationStr && arg1 && arg2) {
+        const curFn = operationsMap[curOperationStr].fn;
+        const result = curFn(parseFloat(arg1), parseFloat(arg2));
+        console.log("result: %o", result);
+        tempOperandStack.push(Number(result.toPrecision(8)).toString());
+      }
     }
+    setOperandStack(tempOperandStack);
+    setOperationStack([nextOperation]);
+    setNextOperation("");
   };
 
-  const handleClick = (newValue: string) => () => {
-    const stackSize = stack.length;
-    const stackTop = stack[stackSize - 1];
-    const stackTopIsOperation = isOperationString(stackTop);
-    const newValueIsOperation = isOperationString(newValue);
+  const handleEqual = () => {
+    calculate();
+  };
 
-    if (!stackSize) {
-      setStack(stackTopIsOperation ? [] : [newValue]);
-      return;
-    } else if (stackTopIsOperation && newValueIsOperation) {
-      stack[stackSize - 1] = newValue;
-    } else if (!stackTopIsOperation && !newValueIsOperation) {
-      const hasPeriod = stackTop.includes(".");
-      stack[stackSize - 1] =
-        stackTop + (hasPeriod && newValue.includes(".") ? "" : newValue);
+  const handleClickNumber = (newValue: string) => () => {
+    if (!operandStack.length || activeStack === "operation") {
+      operandStack.push(newValue);
     } else {
-      stack.push(newValue);
+      const top = operandStack[operandStack.length - 1];
+      operandStack[operandStack.length - 1] =
+        top + (top.includes(".") && newValue.includes(".") ? "" : newValue);
     }
-    /* TODO: either here or somewhere else check if ready to calculate (order of operations), and if so, calculate (ran out of time) */
-    setStack([...stack]);
+    setOperandStack([...operandStack]);
+    if (nextOperation) {
+      operationStack.push(nextOperation);
+      setOperationStack([...operationStack]);
+      setNextOperation("");
+    }
+    setActiveStack("operand");
   };
 
-  const toggleSign = () => {
-    if (!stack.length) {
+  const handleClickOperation = (newValue: string) => () => {
+    setNextOperation(newValue);
+    setActiveStack("operation");
+  };
+
+  const handleToggleSign = () => {
+    if (!operandStack.length) {
       return;
     }
-    const str = findStackTopString(stack);
-    stack[findIndexStackTopString(stack)] = (parseFloat(str) * -1).toString();
-    setStack([...stack]);
+    const top = operandStack[operandStack.length - 1];
+    operandStack[operandStack.length - 1] = toggleSign(top);
+    setOperandStack([...operandStack]);
   };
 
   const handlePercent = () => {
-    if (!stack.length) {
+    if (!operandStack.length) {
       return;
     }
-    const str = findStackTopString(stack);
-    stack[findIndexStackTopString(stack)] = (parseFloat(str) / 100).toString();
-    setStack([...stack]);
+    const top = operandStack[operandStack.length - 1];
+    operandStack[operandStack.length - 1] = (parseFloat(top) / 100).toString();
+    setOperandStack([...operandStack]);
+  };
+
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const value = event?.target?.value;
+    console.log("TODO: implement. handleInputChange; value: %o", value);
+  };
+
+  const clearAll = () => {
+    setOperandStack([]);
+    setOperationStack([]);
+    setNextOperation("");
+    setActiveStack("operand");
   };
 
   return (
     <StyledCalculator>
       <StyledInput
-        value={findStackTopString(stack)}
+        value={operandStack[operandStack.length - 1] || "0"}
         onChange={handleInputChange}
       />
       <StyledButtons>
         <CalculatorButton onClick={clearAll} variant="secondary">
           AC
         </CalculatorButton>
-        <CalculatorButton onClick={toggleSign} variant="secondary">
+        <CalculatorButton onClick={handleToggleSign} variant="secondary">
           +/-
         </CalculatorButton>
         <CalculatorButton onClick={handlePercent} variant="secondary">
           %
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick("/")} variant="primary">
+        <CalculatorButton onClick={handleClickOperation("/")} variant="primary">
           ÷
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick("7")}>7</CalculatorButton>
-        <CalculatorButton onClick={handleClick("8")}>8</CalculatorButton>
-        <CalculatorButton onClick={handleClick("9")}>9</CalculatorButton>
-        <CalculatorButton onClick={handleClick("*")} variant="primary">
+        <CalculatorButton onClick={handleClickNumber("7")}>7</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("8")}>8</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("9")}>9</CalculatorButton>
+        <CalculatorButton onClick={handleClickOperation("*")} variant="primary">
           x
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick("4")}>4</CalculatorButton>
-        <CalculatorButton onClick={handleClick("5")}>5</CalculatorButton>
-        <CalculatorButton onClick={handleClick("6")}>6</CalculatorButton>
-        <CalculatorButton onClick={handleClick("-")} variant="primary">
+        <CalculatorButton onClick={handleClickNumber("4")}>4</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("5")}>5</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("6")}>6</CalculatorButton>
+        <CalculatorButton onClick={handleClickOperation("-")} variant="primary">
           -
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick("1")}>1</CalculatorButton>
-        <CalculatorButton onClick={handleClick("2")}>2</CalculatorButton>
-        <CalculatorButton onClick={handleClick("3")}>3</CalculatorButton>
-        <CalculatorButton onClick={handleClick("+")} variant="primary">
+        <CalculatorButton onClick={handleClickNumber("1")}>1</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("2")}>2</CalculatorButton>
+        <CalculatorButton onClick={handleClickNumber("3")}>3</CalculatorButton>
+        <CalculatorButton onClick={handleClickOperation("+")} variant="primary">
           +
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick("0")} className="span2">
+        <CalculatorButton onClick={handleClickNumber("0")} className="span2">
           0
         </CalculatorButton>
-        <CalculatorButton onClick={handleClick(".")}>.</CalculatorButton>
-        <CalculatorButton onClick={calculate} variant="primary">
+        <CalculatorButton onClick={handleClickNumber(".")}>.</CalculatorButton>
+        <CalculatorButton onClick={handleEqual} variant="primary">
           =
         </CalculatorButton>
       </StyledButtons>
